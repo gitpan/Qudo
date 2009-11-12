@@ -1,5 +1,3 @@
-use strict;
-use warnings;
 use Qudo::Test;
 use Test::More;
 
@@ -12,12 +10,23 @@ run_tests(4, sub {
     $master->enqueue("Worker::Test1", {arg => 'arg1', uniqkey => 'uniqkey1'});
     $master->enqueue("Worker::Test2", {arg => 'arg2', uniqkey => 'uniqkey2'});
 
-    is $master->job_count, 2;
-    is $master->job_count([qw/Worker::Test1/]), 1;
-    is $master->job_count([qw/Worker::Test2/]), 1;
-    is $master->job_count([qw/Worker::Test1 Worker::Test2/]), 2;
+    my $row = $master->job_count;
+    my ($dsn, $count) = each %$row; 
+    is $count, 2;
 
-    teardown_db;
+    $row = $master->job_count([qw/Worker::Test1/]);
+    ($dsn, $count) = each %$row;
+    is $count, 1;
+
+    $row = $master->job_count([qw/Worker::Test2/]);
+    ($dsn, $count) = each %$row;
+    is $count, 1;
+
+    $row = $master->job_count([qw/Worker::Test1 Worker::Test2/]);
+    ($dsn, $count) = each %$row;
+    is $count, 2;
+
+    teardown_dbs;
 });
 
 package Worker::Test1;

@@ -1,5 +1,3 @@
-use strict;
-use warnings;
 use Qudo::Test;
 use Test::More;
 
@@ -12,7 +10,7 @@ run_tests(1, sub {
     my $job = $master->enqueue("Worker::Test", { arg => 'arg', uniqkey => 'uniqkey'});
     is $job->id, 1;
 
-    teardown_db;
+    teardown_dbs;
 });
 
 package Worker::Test;

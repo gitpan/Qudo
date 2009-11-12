@@ -1,5 +1,3 @@
-use strict;
-use warnings;
 use Qudo::Test;
 use Test::More;
 
@@ -17,7 +15,7 @@ run_tests(3, sub {
     is $job->arg, 'arg';
     is $job->uniqkey, 'uniqkey';
 
-    teardown_db;
+    teardown_dbs;
 });
 
 package Worker::Test;

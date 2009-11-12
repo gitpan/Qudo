@@ -2,11 +2,12 @@ package Qudo;
 use strict;
 use warnings;
 
-our $VERSION = '0.01_01';
+our $VERSION = '0.01_02';
 
 use Qudo::Manager;
 use Carp;
 use UNIVERSAL::require;
+use List::Util qw/shuffle/;
 
 our $RETRY_SECONDS = 30;
 our $FIND_JOB_LIMIT_SIZE = 30;
@@ -27,6 +28,8 @@ sub new {
         default_plugins     => [],
         manager             => '',
         manager_abilities   => [],
+        databases           => [],
+        connections         => +{},
         @_,
     }, $class;
 
@@ -40,14 +43,41 @@ sub _setup_driver {
 
     my $driver = 'Qudo::Driver::' . $self->{driver_class};
     $driver->use or Carp::croak $@;
-    $self->{driver} = $driver->init_driver($self);
+    $driver->init_driver($self);
+}
+
+sub set_connection {
+    my ($self, $dsn, $connection) = @_;
+    $self->{connections}->{$dsn} = $connection;
+}
+sub get_connection {
+    my ($self, $dsn) = @_;
+    $self->{connections}->{$dsn};
+}
+
+sub shuffled_databases {
+    my $self = shift;
+    my @dsns = keys %{$self->{connections}};
+    return shuffle(@dsns);
+}
+
+sub driver {
+    my ($self, $dsn) = @_;
+    $dsn ||= $self->shuffled_databases;
+    $self->driver_for($dsn);
+}
+
+sub driver_for {
+    my ($self, $dsn) = @_;
+    $self->get_connection($dsn);
 }
 
 sub manager {
     my $self = shift;
 
     $self->{manager} ||= Qudo::Manager->new(
-        driver              => $self->{driver},
+        driver_for          => sub { $self->driver_for(+shift) },
+        shuffled_databases  => sub { $self->shuffled_databases },
         find_job_limit_size => $self->{find_job_limit_size},
         retry_seconds       => $self->{retry_seconds},
         default_hooks       => $self->{default_hooks},
@@ -78,29 +108,55 @@ sub work {
 sub job_list {
     my ($self, $funcs) = @_;
 
-    return $self->{driver}->job_list($self->{find_job_limit_size}, $funcs);
+    return $self->driver->job_list($self->{find_job_limit_size}, $funcs);
 }
 
 sub job_count {
-    my ($self, $funcs) = @_;
+    my ($self, $funcs, $dsn) = @_;
 
-    return $self->{driver}->job_count($funcs);
+    if ($dsn) {
+        return $self->driver_for($dsn)->job_count($funcs);
+    }
+
+    my %job_count;
+    for my $db ($self->shuffled_databases) {
+        $job_count{$db} = $self->driver_for($db)->job_count($funcs);
+    }
+    return \%job_count;
 }
 
 sub exception_list {
-    my ($self, %args) = @_;
+    my ($self, $args, $dsn) = @_;
 
-    $args{limit}  ||= $EXCEPTION_LIMIT_SIZE;
-    $args{offset} ||= $EXCEPTION_OFFSET_SIZE;
-    return $self->{driver}->exception_list(%args);
+    $args->{limit}  ||= $EXCEPTION_LIMIT_SIZE;
+    $args->{offset} ||= $EXCEPTION_OFFSET_SIZE;
+
+    if ($dsn) {
+        return $self->driver_for($dsn)->exception_list($args);
+    }
+
+    my %exception_list;
+    for my $db ($self->shuffled_databases) {
+        $exception_list{$db} = $self->driver_for($db)->exception_list($args);
+    }
+    return \%exception_list;
 }
 
 sub job_status_list {
-    my ($self, %args) = @_;
+    my ($self, $args, $dsn) = @_;
 
-    $args{limit}  ||= $JOB_STATUS_LIMIT_SIZE;
-    $args{offset} ||= $JOB_STATUS_OFFSET_SIZE;
-    return $self->{driver}->job_status_list(%args);
+    $args->{limit}  ||= $JOB_STATUS_LIMIT_SIZE;
+    $args->{offset} ||= $JOB_STATUS_OFFSET_SIZE;
+
+    if ($dsn) {
+        return $self->driver_for($dsn)->job_status_list($args);
+    }
+
+    my %job_status_list;
+    for my $db ($self->shuffled_databases) {
+        $job_status_list{$db} = $self->driver_for($db)->job_status_list($args);
+    }
+    return \%job_status_list;
 }
 
 =head1 NAME
@@ -113,11 +169,11 @@ Qudo - simple job queue manager
     use Qudo;
     my $qudo = Qudo->new(
         driver_class => 'Skinny',
-        database => +{
+        databases => [+{
             dsn      => 'dbi:SQLite:/tmp/qudo.db',
             username => '',
             password => '',
-        },
+        }],
     );
     $qudo->enqueue("Worker::Test", { arg => 'arg', uniqkey => 'uniqkey'});
     
@@ -125,11 +181,11 @@ Qudo - simple job queue manager
     use Qudo;
     my $qudo2 = Qudo->new(
         driver_class => 'Skinny',
-        database => +{
+        databases => [+{
             dsn      => 'dbi:SQLite:/tmp/qudo.db',
             username => '',
             password => '',
-        },
+        }],
         manager_abilities => [qw/Worker::Test/],
     );
     $qudo2->work(); # boot manager

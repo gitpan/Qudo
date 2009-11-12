@@ -1,5 +1,3 @@
-use strict;
-use warnings;
 use Qudo::Test;
 use Test::More;
 use Test::Output;
@@ -15,7 +13,7 @@ run_tests(1, sub {
     $manager->enqueue("Worker::Test2", { arg => 'oops', uniqkey => 'uniqkey'});
     is $manager->work_once, undef;
 
-    teardown_db;
+    teardown_dbs;
 });
 
 package Worker::Test;

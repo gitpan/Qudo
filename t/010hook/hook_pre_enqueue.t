@@ -1,8 +1,5 @@
-use strict;
-use warnings;
 use Qudo::Test;
 use Test::More;
-use lib './t';
 
 run_tests(6, sub {
     my $driver = shift;
@@ -28,7 +25,7 @@ run_tests(6, sub {
     is $job->arg, 'arg';
     is $job->uniqkey, 'uniqkey2';
 
-    teardown_db;
+    teardown_dbs;
 });
 
 package Worker::Test;

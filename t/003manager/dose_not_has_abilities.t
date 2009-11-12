@@ -1,5 +1,3 @@
-use strict;
-use warnings;
 use Qudo::Test;
 use Test::More;
 use Test::Output;
@@ -12,6 +10,6 @@ run_tests(1, sub {
 
     ok ! $master->manager->has_abilities;
 
-    teardown_db;
+    teardown_dbs;
 });
 

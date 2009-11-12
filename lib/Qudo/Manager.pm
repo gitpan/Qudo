@@ -10,7 +10,8 @@ sub new {
     my $class = shift;
 
     my $self = bless {
-        driver              => '',
+        driver_for          => '',
+        shuffled_databases  => '',
         find_job_limit_size => '',
         retry_seconds       => '',
         fanc_map            => +{},
@@ -29,7 +30,8 @@ sub new {
     return $self;
 }
 
-sub driver { $_[0]->{driver} }
+sub driver_for { $_[0]->{driver_for}->($_[1]) }
+sub shuffled_databases { $_[0]->{shuffled_databases}->() }
 sub plugin { $_[0]->{plugin} }
 
 sub register_abilities {
@@ -89,10 +91,21 @@ sub can_do {
     $self->{func_map}->{$funcname} = 1;
 }
 
+sub funcname_to_id {
+    my ($self, $funcname, $db) = @_;
+    $self->{_func_cache}->{$db}->{funcname2id}->{$funcname} ||= $self->driver_for($db)->get_func_id( $funcname );
+}
+
+sub funcid_to_name {
+    my ($self, $funcid, $db) = @_;
+    $self->{_func_cache}->{$db}->{funcid2name}->{$funcid} ||= $self->driver_for($db)->get_func_name( $funcid );
+}
+
 sub enqueue {
     my ($self, $funcname, $arg) = @_;
 
-    my $func_id = $self->{_func_id_cache}->{$funcname} ||= $self->driver->get_func_id( $funcname );
+    my $db = $self->shuffled_databases;
+    my $func_id = $self->funcname_to_id($funcname, $db);
 
     unless ($func_id) {
         croak "$funcname can't get";
@@ -103,13 +116,14 @@ sub enqueue {
         arg       => $arg->{arg},
         uniqkey   => $arg->{uniqkey},
         run_after => $arg->{run_after}||0,
+        priority  => $arg->{priority} ||0,
     };
 
     $self->call_hook('pre_enqueue', $funcname, $args);
     $self->call_hook('serialize',   $funcname, $args);
 
-    my $job_id = $self->driver->enqueue($args);
-    my $job = $self->lookup_job($job_id);
+    my $job_id = $self->driver_for($db)->enqueue($args);
+    my $job = $self->lookup_job($job_id, $db);
 
     $self->call_hook('post_enqueue', $funcname, $job);
 
@@ -119,14 +133,15 @@ sub enqueue {
 sub reenqueue {
     my ($self, $job, $args) = @_;
 
-    $self->driver->reenqueue($job->id, $args);
+    my $db = $self->shuffled_databases;
+    $self->driver_for($db)->reenqueue($job->id, $args);
 
     return $self->lookup_job($job->id);
 }
 
 sub dequeue {
     my ($self, $job) = @_;
-    $self->driver->dequeue({id => $job->id});
+    $self->driver_for($job->db)->dequeue({id => $job->id});
 }
 
 sub work_once {
@@ -149,51 +164,56 @@ sub work_once {
 }
 
 sub lookup_job {
-    my ($self, $job_id) = @_;
+    my ($self, $job_id, $db) = @_;
 
-    my $callback = $self->driver->lookup_job($job_id);
+    $db ||= $self->shuffled_databases;
+
+    my $callback = $self->driver_for($db)->lookup_job($job_id);
     my $job_data = $callback->();
-    return $job_data ? $self->_data2job($job_data) : undef;
+    return $job_data ? $self->_data2job($job_data, $db) : undef;
 }
 
 sub find_job {
     my $self = shift;
 
-    return unless keys %{$self->{func_map}};
-    my $callback = $self->driver->find_job($self->{find_job_limit_size}, $self->{func_map});
+    for my $db ($self->shuffled_databases) {
+        return unless keys %{$self->{func_map}};
+        my $callback = $self->driver_for($db)->find_job($self->{find_job_limit_size}, $self->{func_map});
 
-    return $self->_grab_a_job($callback);
+        return $self->_grab_a_job($callback, $db);
+    }
 }
 
 sub _data2job {
-    my ($self, $job_data) = @_;
+    my ($self, $job_data, $db) = @_;
 
     Qudo::Job->new(
         manager  => $self,
         job_data => $job_data,
+        db       => $db,
     );
 }
 
 sub _grab_a_job {
-    my ($self, $callback) = @_;
+    my ($self, $callback, $db) = @_;
 
     while (1) {
         my $job_data = $callback->();
         last unless $job_data;
 
         my $old_grabbed_until = $job_data->{job_grabbed_until};
-        my $server_time = $self->driver->get_server_time
+        my $server_time = $self->driver_for($db)->get_server_time
             or die "expected a server time";
 
         my $worker_class = $job_data->{func_name};
-        my $grab_job = $self->driver->grab_a_job(
+        my $grab_job = $self->driver_for($db)->grab_a_job(
             grabbed_until     => ($server_time + $worker_class->grab_for),
             job_id            => $job_data->{job_id},
             old_grabbed_until => $old_grabbed_until,
         );
         next if $grab_job < 1;
 
-        return $self->_data2job($job_data);
+        return $self->_data2job($job_data, $db);
     }
     return;
 }
@@ -201,7 +221,7 @@ sub _grab_a_job {
 sub job_failed {
     my ($self, $job, $message) = @_;
 
-    $self->driver->logging_exception(
+    $self->driver_for($job->db)->logging_exception(
         {
             func_id => $job->func_id,
             message => $message,
@@ -214,19 +234,20 @@ sub job_failed {
 sub set_job_status {
     my ($self, $job, $status) = @_;
 
-    $self->driver->set_job_status(
+    $self->driver_for($job->db)->set_job_status(
         {
-            func_id      => $job->func_id,
-            arg          => $job->arg_origin || $job->arg,
-            uniqkey      => $job->uniqkey,
-            status       => $status,
-            process_time => $job->process_time,
+            func_id        => $job->func_id,
+            arg            => $job->arg_origin || $job->arg,
+            uniqkey        => $job->uniqkey,
+            status         => $status,
+            job_start_time => $job->job_start_time,
+            job_end_time   => time(),
         }
     );
 }
 
 sub enqueue_from_failed_job {
-    my ($self, $exception_log) = @_;
+    my ($self, $exception_log, $db) = @_;
 
     if ( $exception_log->{retried} ) {
         Carp::carp('this exception is already retried');
@@ -238,11 +259,11 @@ sub enqueue_from_failed_job {
         uniqkey => $exception_log->{uniqkey},
     };
 
-    my $job_id = $self->driver->enqueue($args);
+    my $job_id = $self->driver_for($db)->enqueue($args);
 
-    $self->driver->retry_from_exception_log($exception_log->{id});
+    $self->driver_for($db)->retry_from_exception_log($exception_log->{id});
 
-    $self->lookup_job($job_id);
+    $self->lookup_job($job_id, $db);
 }
 
 1;

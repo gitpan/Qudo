@@ -1,16 +1,17 @@
 use Qudo::Test;
 use Test::More;
-use Test::Output;
 
-run_tests(1, sub {
+run_tests(3, sub {
     my $driver = shift;
+    my @dbs = qw/db1 db2 db3/;
     my $master = test_master(
         driver_class => $driver,
-        manager_abilities => [qw/Worker::Test/],
+        dbs => \@dbs,
     );
 
-    ok $master->manager->has_abilities;
+    for my $db (@dbs) {
+        ok $master->driver_for(dsn_for($db));
+    }
 
     teardown_dbs;
 });
-

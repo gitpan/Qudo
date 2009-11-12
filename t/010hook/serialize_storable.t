@@ -1,8 +1,5 @@
-use strict;
-use warnings;
 use Qudo::Test;
 use Test::More;
-use lib './t';
 
 my %hash = ( key => 'arg' );
 run_tests(7, sub {
@@ -45,7 +42,7 @@ run_tests(7, sub {
         is $res , 'arg';
     }
 
-    teardown_db;
+    teardown_dbs;
 });
 
 package Worker::Test;

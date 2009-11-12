@@ -13,11 +13,13 @@ sub func_id  { $_[0]->{job_data}->{func_id}      }
 sub funcname { $_[0]->{job_data}->{func_name}    }
 sub retry_cnt     { $_[0]->{job_data}->{job_retry_cnt}     }
 sub grabbed_until { $_[0]->{job_data}->{job_grabbed_until} }
+sub priority { $_[0]->{job_data}->{job_priority} }
 sub arg : lvalue  { $_[0]->{job_data}->{job_arg}           }
 sub arg_origin : lvalue { $_[0]->{arg_origin} }
+sub db { $_[0]->{db} }
 
 sub manager  { $_[0]->{manager} }
-sub process_time { 0 }
+sub job_start_time : lvalue { $_[0]->{job_start_time} }
 
 sub completed {
     my $self = shift;

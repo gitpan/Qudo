@@ -1,8 +1,5 @@
-use strict;
-use warnings;
 use Qudo::Test;
 use Test::More;
-use lib './t';
 
 BEGIN {
   eval "use Data::MessagePack";
@@ -47,7 +44,8 @@ run_tests(12, sub {
 
         $manager->work_once; # worker failed
         my $exception = $master->exception_list;
-        is $exception->[0]->{arg} , Data::MessagePack->pack( \%hash );
+        my ($db, $rows) = each %$exception;
+        is $rows->[0]->{arg} , Data::MessagePack->pack( \%hash );
     }
 
     { # unload Qudo::Hook::Serialize::MessagePack
@@ -65,7 +63,7 @@ run_tests(12, sub {
         is $res , 'arg';
     }
 
-    teardown_db;
+    teardown_dbs;
 });
 
 package Worker::Test;

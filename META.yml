@@ -1,26 +1,32 @@
---- 
-abstract: simple job queue manager
-author: 
-  - Atsushi Kobayashi <nekokak _at_ gmail dot com>
-build_requires: 
+---
+abstract: 'simple job queue manager'
+author:
+  - 'Atsushi Kobayashi <nekokak _at_ gmail dot com>'
+build_requires:
+  ExtUtils::MakeMaker: 6.42
   Test::More: 0
   Test::Output: 0
+configure_requires:
+  ExtUtils::MakeMaker: 6.42
 distribution_type: module
-generated_by: Module::Install version 0.680
+generated_by: 'Module::Install version 0.910'
 license: perl
-meta-spec: 
-  url: http://module-build.sourceforge.net/META-spec-v1.3.html
-  version: 1.3
+meta-spec:
+  url: http://module-build.sourceforge.net/META-spec-v1.4.html
+  version: 1.4
 name: Qudo
-no_index: 
-  directory: 
+no_index:
+  directory:
     - inc
     - t
-requires: 
+    - xt
+requires:
   Carp: 0
   DBI: 0
   DBIx::Skinny: 0
   UNIVERSAL::require: 0
   YAML: 0
-tests: xt
-version: 0.01_01
+resources:
+  license: http://dev.perl.org/licenses/
+  repository: git://github.com/nekokak/qudo.git
+version: 0.01_02

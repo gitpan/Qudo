@@ -1,8 +1,5 @@
-use strict;
-use warnings;
 use Qudo::Test;
 use Test::Output;
-use lib './t';
 
 {
     package Worker::Test;
@@ -30,7 +27,7 @@ run_tests(2, sub {
     $manager->enqueue("Worker::Test2", { arg => 'arg', uniqkey => 'uniqkey1'});
     stdout_is( sub { $manager->work_once } , "arg\n");
 
-    teardown_db;
+    teardown_dbs;
 });
 
 package Worker::Test2;

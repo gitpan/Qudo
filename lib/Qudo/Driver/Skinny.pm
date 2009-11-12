@@ -1,18 +1,17 @@
 package Qudo::Driver::Skinny;
-
-use DBIx::Skinny setup => +{
-};
+use DBIx::Skinny;
 
 sub init_driver {
     my ($class, $master) = @_;
 
-    $class->reconnect($master->{database});
-
-    return $class;
+    for my $database (@{$master->{databases}}) {
+        my $connection = $class->new($database);
+        $master->set_connection($database->{dsn}, $connection);
+    }
 }
 
 sub exception_list {
-    my ($class, %args) = @_;
+    my ($class, $args) = @_;
 
     my $rs = $class->resultset(
         {
@@ -25,12 +24,12 @@ sub exception_list {
                           exception_log.retried
                       /],
             from   => [qw/exception_log/],
-            limit  => $args{limit},
-            offset => $args{offset},
+            limit  => $args->{limit},
+            offset => $args->{offset},
         }
     );
 
-    if ($args{funcs}) {
+    if ($args->{funcs}) {
         $rs->from([]);
         $rs->add_join(
             exception_log => {
@@ -39,7 +38,7 @@ sub exception_list {
                 condition => 'exception_log.func_id = func.id',
             }
         );
-        $rs->add_where('func.name' => $args{funcs});
+        $rs->add_where('func.name' => $args->{funcs});
     }
     my $itr = $rs->retrieve;
 
@@ -51,7 +50,7 @@ sub exception_list {
 }
 
 sub job_status_list {
-    my ($class, %args) = @_;
+    my ($class, $args) = @_;
 
     my $rs = $class->resultset(
         {
@@ -60,16 +59,16 @@ sub job_status_list {
                           job_status.arg
                           job_status.uniqkey
                           job_status.status
-                          job_status.process_time
+                          job_status.job_start_time
                           job_status.job_end_time
                       /],
             from   => [qw/job_status/],
-            limit  => $args{limit},
-            offset => $args{offset},
+            limit  => $args->{limit},
+            offset => $args->{offset},
         }
     );
 
-    if ($args{funcs}) {
+    if ($args->{funcs}) {
         $rs->from([]);
         $rs->add_join(
             job_status => {
@@ -78,7 +77,7 @@ sub job_status_list {
                 condition => 'job_status.func_id = func.id',
             }
         );
-        $rs->add_where('func.name' => $args{funcs});
+        $rs->add_where('func.name' => $args->{funcs});
     }
     my $itr = $rs->retrieve;
 
@@ -165,7 +164,7 @@ sub _search_job_rs {
 
     my $rs = $class->resultset(
         {
-            select => [qw/job.id job.arg job.uniqkey job.func_id job.grabbed_until job.retry_cnt/],
+            select => [qw/job.id job.arg job.uniqkey job.func_id job.grabbed_until job.retry_cnt job.priority/],
             limit  => $args{limit},
         }
     );
@@ -177,6 +176,8 @@ sub _search_job_rs {
             condition => 'job.func_id = func.id',
         }
     );
+    $rs->order({column => 'job.priority', desc => 'DESC'});
+
     return $rs;
 }
 
@@ -190,6 +191,7 @@ sub _get_job_data {
             job_uniqkey       => $job->uniqkey,
             job_grabbed_until => $job->grabbed_until,
             job_retry_cnt     => $job->retry_cnt,
+            job_priority      => $job->priority,
             func_id           => $job->func_id,
             func_name         => $job->funcname,
         };
@@ -255,6 +257,13 @@ sub get_func_id {
 
     my $func = $class->find_or_create('func',{ name => $funcname });
     return $func ? $func->id : undef;
+}
+
+sub get_func_name {
+    my ($class, $funcid) = @_;
+
+    my $func = $class->single('func',{ id => $funcid });
+    return $func ? $func->name : undef;
 }
 
 sub retry_from_exception_log {

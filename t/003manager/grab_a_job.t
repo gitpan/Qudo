@@ -1,5 +1,3 @@
-use strict;
-use warnings;
 use Qudo::Test;
 use Test::More;
 
@@ -21,7 +19,7 @@ run_tests(4, sub {
 
     ok ! $manager->find_job;
 
-    teardown_db;
+    teardown_dbs;
 });
 
 package Worker::Test;

@@ -10,17 +10,19 @@ use Qudo::Driver::DBI::DBD;
 sub init_driver {
     my ($class, $master) = @_;
 
-    my $self = bless {
-        database => $master->{database} ,
-        dbh      => '',
-        dbd      => '',
-    }, $class;
-    $self->_connect();
+    for my $database (@{$master->{databases}}) {
+        my $connection = bless {
+            database => $database,
+            dbh      => '',
+            dbd      => '',
+        }, $class;
+        $connection->_connect();
 
-    my $dbd_type = $self->{dbh}->{Driver}->{Name};
-    $self->{dbd} = Qudo::Driver::DBI::DBD->new($dbd_type);
-    
-    return $self;
+        my $dbd_type = $connection->{dbh}->{Driver}->{Name};
+        $connection->{dbd} = Qudo::Driver::DBI::DBD->new($dbd_type);
+
+        $master->set_connection($database->{dsn}, $connection);
+    }
 }
 
 sub _connect {
@@ -32,6 +34,53 @@ sub _connect {
         $self->{database}->{password},
         { RaiseError => 1, PrintError => 0, AutoCommit => 1, %{ $self->{database}->{connect_options} || {} } }
     );
+}
+
+sub job_status_list {
+    my ($self, $args) = @_;
+
+    my $sql = q{
+        SELECT
+            job_status.id,
+            job_status.func_id,
+            job_status.arg,
+            job_status.uniqkey,
+            job_status.status,
+            job_status.job_start_time,
+            job_status.job_end_time
+        FROM
+            job_status
+    };
+
+    my @funcs;
+    if( $args->{funcs} ){
+        if( ref($args->{funcs}) eq 'ARRAY' ){
+            @funcs = @{$args->{funcs}};
+        }
+        else{
+            push @funcs , $args->{funcs};
+        }
+
+        $sql .= sprintf( q{
+            INNER JOIN
+                func
+            ON
+                job_status.func_id = func.id
+            WHERE (func.name IN (%s) )}, join(',',map{'?'} @funcs) );
+    }
+
+    $sql .= q{ LIMIT ? OFFSET ? };
+
+    my $sth = $self->_execute(
+        $sql,
+        [ @funcs , $args->{limit} ,$args->{offset} ]
+    );
+
+    my @job_status_list;
+    while (my $row = $sth->fetchrow_hashref) {
+        push @job_status_list, $row;
+    }
+    return \@job_status_list;
 }
 
 sub job_count {
@@ -105,12 +154,12 @@ sub job_list {
 }
 
 sub exception_list {
-    my ($self, %args) = @_;
+    my ($self, $args) = @_;
 
     my @bind   = ();
-    my $limit  = $args{limit};
-    my $offset = $args{offset};
-    my $funcs  = $args{funcs} || '';
+    my $limit  = $args->{limit};
+    my $offset = $args->{offset};
+    my $funcs  = $args->{funcs} || '';
     my $sql = q{
         SELECT
             exception_log.id,
@@ -198,7 +247,7 @@ sub find_job {
     $sql .= q{
         WHERE
             job.grabbed_until <= ? 
-          AND
+        AND
             job.run_after <= ?
     };
     my @bind = $self->get_server_time;
@@ -211,8 +260,11 @@ sub find_job {
         push @bind , @{$keys};
     }
 
+    # priority
+    $sql .= q{ ORDER BY job.priority DESC };
+
     # limit
-    $sql .= q{LIMIT ?};
+    $sql .= q{ LIMIT ? };
     push @bind , $limit;
 
     my $sth = $self->{dbh}->prepare( $sql );
@@ -236,6 +288,7 @@ sub _search_job_sql {
             job.func_id AS func_id,
             job.grabbed_until AS grabbed_until,
             job.retry_cnt AS retry_cnt,
+            job.priority AS priority,
             func.name AS funcname
         FROM job
         INNER JOIN
@@ -253,6 +306,7 @@ sub _get_job_data {
                 job_uniqkey       => $row->{uniqkey},
                 job_grabbed_until => $row->{grabbed_until},
                 job_retry_cnt     => $row->{retry_cnt},
+                job_priority      => $row->{priority},
                 func_id           => $row->{func_id},
                 func_name         => $row->{funcname},
             };
@@ -321,6 +375,25 @@ sub logging_exception {
     return;
 }
 
+sub set_job_status{
+    my ($self, $args) = @_;
+
+    my @column = keys %{$args};
+    my $sql  = $self->_build_insert_sql(
+        'job_status',
+        \@column
+    );
+
+    my @bind = map {$args->{$_}} @column;
+
+    $self->_execute(
+        $sql,
+        \@bind
+    );
+
+    return;
+}
+
 sub get_server_time {
     my $self = shift;
 
@@ -340,13 +413,13 @@ sub enqueue {
     $args->{grabbed_until} ||= 0;
     $args->{retry_cnt}     ||= 0;
     $args->{run_after}     = time + ($args->{run_after}||0);
+    $args->{priority}      ||= 0;
 
     my @column = keys %{$args};
-    my $sql  = 'INSERT INTO job ( ';
-       $sql .= join ' ,' , @column;
-       $sql .= ' ) VALUES ( ';
-       $sql .= join(', ', ('?') x @column);
-       $sql .=  ')';
+    my $sql  = $self->_build_insert_sql(
+        'job',
+        \@column
+    );
 
     my $sth_ins = $self->{dbh}->prepare( $sql );
     my @bind = map {$args->{$_}} @column;
@@ -452,6 +525,22 @@ sub get_func_id {
     return $func_id;
 }
 
+sub get_func_name {
+    my ($self, $funcid) = @_;
+
+    my $sth;
+    eval {
+        $sth = $self->{dbh}->prepare(
+            q{SELECT * FROM func WHERE id = ?}
+        );
+        $sth->execute( $funcid );
+    };
+    if ($@) { croak $@ }
+
+    my $ret_hashref = $sth->fetchrow_hashref();
+    return $ret_hashref ? $ret_hashref->{name} : undef;
+}
+
 sub retry_from_exception_log {
     my ($self, $exception_log_id) = @_;
 
@@ -484,9 +573,18 @@ sub _join_func_name{
     return $func_name;
 }
 
+sub _build_insert_sql{
+    my( $self , $table , $column_ary_ref ) = @_;
+
+    my $sql  = qq{ INSERT INTO $table ( };
+       $sql .= join ' , ' , @{$column_ary_ref};
+       $sql .= ' ) VALUES ( ';
+       $sql .= join( ' , ', ('?') x @{$column_ary_ref} );
+       $sql .= ' )';
+
+    return $sql;
+}
+
 1;
 
-=head1 AUTHOR
-
-Masaru Hoshino <masartz _at_ gmail dot com>
 

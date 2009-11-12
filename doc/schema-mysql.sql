@@ -3,6 +3,7 @@ CREATE TABLE func (
     name       VARCHAR(255) NOT NULL,
     UNIQUE(name)
 );
+
 CREATE TABLE job (
     id              BIGINT UNSIGNED PRIMARY KEY NOT NULL AUTO_INCREMENT,
     func_id         INTEGER UNSIGNED NOT NULL,
@@ -12,8 +13,10 @@ CREATE TABLE job (
     grabbed_until   INTEGER UNSIGNED NOT NULL,
     run_after       INTEGER UNSIGNED NOT NULL DEFAULT 0,
     retry_cnt       INTEGER UNSIGNED NOT NULL DEFAULT 0,
+    priority        INTEGER UNSIGNED NOT NULL DEFAULT 0,
     UNIQUE(func_id, uniqkey)
 );
+
 CREATE TABLE exception_log (
     id              BIGINT UNSIGNED PRIMARY KEY NOT NULL AUTO_INCREMENT,
     func_id         INTEGER UNSIGNED NOT NULL DEFAULT 0,
@@ -26,3 +29,12 @@ CREATE TABLE exception_log (
     INDEX (exception_time)
 );
 
+CREATE TABLE job_status (
+    id              BIGINT UNSIGNED PRIMARY KEY NOT NULL AUTO_INCREMENT,
+    func_id         INTEGER UNSIGNED NOT NULL DEFAULT 0,
+    arg             MEDIUMBLOB NOT NULL,
+    uniqkey         VARCHAR(255) NULL,
+    status          VARCHAR(10),
+    job_start_time  INTEGER UNSIGNED NOT NULL,
+    job_end_time    INTEGER UNSIGNED NOT NULL
+);
