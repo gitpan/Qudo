@@ -9,7 +9,7 @@ build_requires:
 configure_requires:
   ExtUtils::MakeMaker: 6.42
 distribution_type: module
-generated_by: 'Module::Install version 0.910'
+generated_by: 'Module::Install version 0.94'
 license: perl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
@@ -17,6 +17,7 @@ meta-spec:
 name: Qudo
 no_index:
   directory:
+    - doc
     - inc
     - t
     - xt
@@ -25,9 +26,9 @@ requires:
   Class::Data::Inheritable: 0
   DBI: 0
   DBIx::Skinny: 0
+  Filter::Util::Call: 0
   UNIVERSAL::require: 0
   YAML: 0
 resources:
   license: http://dev.perl.org/licenses/
-  repository: git://github.com/nekokak/qudo.git
-version: 0.02
+version: 0.0201
