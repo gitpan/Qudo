@@ -2,7 +2,7 @@ package Qudo;
 use strict;
 use warnings;
 
-our $VERSION = '0.0201';
+our $VERSION = '0.0202';
 
 use Qudo::Manager;
 use Carp;
@@ -76,8 +76,7 @@ sub manager {
     my $self = shift;
 
     $self->{manager} ||= Qudo::Manager->new(
-        driver_for          => sub { $self->driver_for(+shift) },
-        shuffled_databases  => sub { $self->shuffled_databases },
+        qudo                => $self,
         find_job_limit_size => $self->{find_job_limit_size},
         retry_seconds       => $self->{retry_seconds},
         default_hooks       => $self->{default_hooks},
