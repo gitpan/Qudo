@@ -1,43 +1,41 @@
 #line 1
-# $Id: /mirror/svn.schwern.org/CPAN/ExtUtils-MakeMaker/trunk/lib/ExtUtils/MakeMaker.pm 41145 2007-12-08T01:01:11.051959Z schwern  $
+# $Id$
 package ExtUtils::MakeMaker;
 
-BEGIN {require 5.005_03;}
+use strict;
+
+BEGIN {require 5.006;}
 
 require Exporter;
 use ExtUtils::MakeMaker::Config;
 use Carp ();
 use File::Path;
 
-use vars qw(
-            @ISA @EXPORT @EXPORT_OK
-            $VERSION $Verbose %Config
-            @Prepend_parent @Parent
-            %Recognized_Att_Keys @Get_from_Config @MM_Sections @Overridable
-            $Filename
-           );
+our $Verbose = 0;       # exported
+our @Parent;            # needs to be localized
+our @Get_from_Config;   # referenced by MM_Unix
+our @MM_Sections;
+our @Overridable;
+my @Prepend_parent;
+my %Recognized_Att_Keys;
 
-# Has to be on its own line with no $ after it to avoid being noticed by
-# the version control system
-use vars qw($Revision);
-use strict;
+our $VERSION = '6.48';
 
-$VERSION = '6.42';
-($Revision) = q$Revision: 41145 $ =~ /Revision:\s+(\S+)/;
+# Emulate something resembling CVS $Revision$
+(our $Revision = $VERSION) =~ s{_}{};
+$Revision = int $Revision * 10000;
 
-@ISA = qw(Exporter);
-@EXPORT = qw(&WriteMakefile &writeMakefile $Verbose &prompt);
-@EXPORT_OK = qw($VERSION &neatvalue &mkbootstrap &mksymlists
-                &WriteEmptyMakefile);
+our $Filename = __FILE__;   # referenced outside MakeMaker
+
+our @ISA = qw(Exporter);
+our @EXPORT    = qw(&WriteMakefile &writeMakefile $Verbose &prompt);
+our @EXPORT_OK = qw($VERSION &neatvalue &mkbootstrap &mksymlists
+                    &WriteEmptyMakefile);
 
 # These will go away once the last of the Win32 & VMS specific code is 
 # purged.
 my $Is_VMS     = $^O eq 'VMS';
 my $Is_Win32   = $^O eq 'MSWin32';
-
-# Our filename for diagnostic and debugging purposes.  More reliable
-# than %INC (think caseless filesystems)
-$Filename = __FILE__;
 
 full_setup();
 
@@ -46,7 +44,7 @@ require ExtUtils::MM;  # Things like CPAN assume loading ExtUtils::MakeMaker
 
 require ExtUtils::MY;  # XXX pre-5.8 versions of ExtUtils::Embed expect
                        # loading ExtUtils::MakeMaker will give them MY.
-                       # This will go when Embed is it's own CPAN module.
+                       # This will go when Embed is its own CPAN module.
 
 
 sub WriteMakefile {
@@ -84,6 +82,8 @@ my %Special_Sigs = (
  LIBS               => ['ARRAY',''],
  MAN1PODS           => 'HASH',
  MAN3PODS           => 'HASH',
+ META_ADD           => 'HASH',
+ META_MERGE         => 'HASH',
  PL_FILES           => 'HASH',
  PM                 => 'HASH',
  PMLIBDIRS          => 'ARRAY',
@@ -144,7 +144,7 @@ sub _format_att {
 }
 
 
-sub prompt ($;$) {
+sub prompt ($;$) {  ## no critic
     my($mess, $def) = @_;
     Carp::confess("prompt function called without an argument") 
         unless defined $mess;
@@ -221,7 +221,7 @@ sub full_setup {
 
     AUTHOR ABSTRACT ABSTRACT_FROM BINARY_LOCATION
     C CAPI CCFLAGS CONFIG CONFIGURE DEFINE DIR DISTNAME DL_FUNCS DL_VARS
-    EXCLUDE_EXT EXE_FILES EXTRA_META FIRST_MAKEFILE
+    EXCLUDE_EXT EXE_FILES FIRST_MAKEFILE
     FULLPERL FULLPERLRUN FULLPERLRUNINST
     FUNCLIST H IMPORTS
 
@@ -240,7 +240,8 @@ sub full_setup {
     SITELIBEXP      SITEARCHEXP 
 
     INC INCLUDE_EXT LDFROM LIB LIBPERL_A LIBS LICENSE
-    LINKTYPE MAKE MAKEAPERL MAKEFILE MAKEFILE_OLD MAN1PODS MAN3PODS MAP_TARGET 
+    LINKTYPE MAKE MAKEAPERL MAKEFILE MAKEFILE_OLD MAN1PODS MAN3PODS MAP_TARGET
+    META_ADD META_MERGE MIN_PERL_VERSION
     MYEXTLIB NAME NEEDS_LINKING NOECHO NO_META NORECURS NO_VC OBJECT OPTIMIZE 
     PERL_MALLOC_OK PERL PERLMAINCC PERLRUN PERLRUNINST PERL_CORE
     PERL_SRC PERM_RW PERM_RWX
@@ -376,14 +377,22 @@ sub new {
 
     if ("@ARGV" =~ /\bPREREQ_PRINT\b/) {
         require Data::Dumper;
-        print Data::Dumper->Dump([$self->{PREREQ_PM}], [qw(PREREQ_PM)]);
+        my @what = ('PREREQ_PM');
+        push @what, 'MIN_PERL_VERSION' if $self->{MIN_PERL_VERSION};
+        print Data::Dumper->Dump([@{$self}{@what}], \@what);
         exit 0;
     }
 
     # PRINT_PREREQ is RedHatism.
     if ("@ARGV" =~ /\bPRINT_PREREQ\b/) {
-        print join(" ", map { "perl($_)>=$self->{PREREQ_PM}->{$_} " } 
-                        sort keys %{$self->{PREREQ_PM}}), "\n";
+        my @prereq =
+            map { [$_, $self->{PREREQ_PM}{$_}] } keys %{$self->{PREREQ_PM}};
+        if ( $self->{MIN_PERL_VERSION} ) {
+            push @prereq, ['perl' => $self->{MIN_PERL_VERSION}];
+        }
+
+        print join(" ", map { "perl($_->[0])>=$_->[1] " }
+                        sort { $a->[0] cmp $b->[0] } @prereq), "\n";
         exit 0;
    }
 
@@ -395,6 +404,39 @@ sub new {
     $self = {} unless (defined $self);
 
     check_hints($self);
+
+    # Translate X.Y.Z to X.00Y00Z
+    if( defined $self->{MIN_PERL_VERSION} ) {
+        $self->{MIN_PERL_VERSION} =~ s{ ^ (\d+) \. (\d+) \. (\d+) $ }
+                                      {sprintf "%d.%03d%03d", $1, $2, $3}ex;
+    }
+
+    my $perl_version_ok = eval {
+        local $SIG{__WARN__} = sub { 
+            # simulate "use warnings FATAL => 'all'" for vintage perls
+            die @_;
+        };
+        !$self->{MIN_PERL_VERSION} or $self->{MIN_PERL_VERSION} <= $]
+    };
+    if (!$perl_version_ok) {
+        if (!defined $perl_version_ok) {
+            warn <<'END';
+Warning: MIN_PERL_VERSION is not in a recognized format.
+Recommended is a quoted numerical value like '5.005' or '5.008001'.
+END
+        }
+        elsif ($self->{PREREQ_FATAL}) {
+            die sprintf <<"END", $self->{MIN_PERL_VERSION}, $];
+MakeMaker FATAL: perl version too low for this distribution.
+Required is %s. We run %s.
+END
+        }
+        else {
+            warn sprintf
+                "Warning: Perl version %s or higher required. We run %s.\n",
+                $self->{MIN_PERL_VERSION}, $];
+        }
+    }
 
     my %configure_att;         # record &{$self->{CONFIGURE}} attributes
     my(%initial_att) = %$self; # record initial attributes
@@ -455,19 +497,19 @@ END
     my $newclass = ++$PACKNAME;
     local @Parent = @Parent;    # Protect against non-local exits
     {
-        no strict 'refs';
         print "Blessing Object into class [$newclass]\n" if $Verbose>=2;
         mv_all_methods("MY",$newclass);
         bless $self, $newclass;
         push @Parent, $self;
         require ExtUtils::MY;
+
+        no strict 'refs';   ## no critic;
         @{"$newclass\:\:ISA"} = 'MM';
     }
 
     if (defined $Parent[-2]){
         $self->{PARENT} = $Parent[-2];
-        my $key;
-        for $key (@Prepend_parent) {
+        for my $key (@Prepend_parent) {
             next unless defined $self->{PARENT}{$key};
 
             # Don't stomp on WriteMakefile() args.
@@ -607,8 +649,7 @@ END
     }
 
     # turn the SKIP array into a SKIPHASH hash
-    my (%skip,$skip);
-    for $skip (@{$self->{SKIP} || []}) {
+    for my $skip (@{$self->{SKIP} || []}) {
         $self->{SKIPHASH}{$skip} = 1;
     }
     delete $self->{SKIP}; # free memory
@@ -663,8 +704,8 @@ sub WriteEmptyMakefile {
     if ( -f $new ) {
         _rename($new, $old) or warn "rename $new => $old: $!"
     }
-    open MF, '>'.$new or die "open $new for write: $!";
-    print MF <<'EOP';
+    open my $mfh, '>', $new or die "open $new for write: $!";
+    print $mfh <<'EOP';
 all :
 
 clean :
@@ -676,7 +717,7 @@ makemakerdflt :
 test :
 
 EOP
-    close MF or die "close $new for write: $!";
+    close $mfh or die "close $new for write: $!";
 }
 
 sub check_manifest {
@@ -795,7 +836,7 @@ sub check_hints {
 }
 
 sub _run_hintfile {
-    no strict 'vars';
+    our $self;
     local($self) = shift;       # make $self available to the hint file.
     my($hint_file) = shift;
 
@@ -814,8 +855,6 @@ sub _run_hintfile {
 
 sub mv_all_methods {
     my($from,$to) = @_;
-    no strict 'refs';
-    my($symtab) = \%{"${from}::"};
 
     # Here you see the *current* list of methods that are overridable
     # from Makefile.PL via MY:: subroutines. As of VERSION 5.07 I'm
@@ -838,19 +877,23 @@ sub mv_all_methods {
 
         next unless defined &{"${from}::$method"};
 
-        *{"${to}::$method"} = \&{"${from}::$method"};
+        {
+            no strict 'refs';   ## no critic
+            *{"${to}::$method"} = \&{"${from}::$method"};
 
-        # delete would do, if we were sure, nobody ever called
-        # MY->makeaperl directly
+            # If we delete a method, then it will be undefined and cannot
+            # be called.  But as long as we have Makefile.PLs that rely on
+            # %MY:: being intact, we have to fill the hole with an
+            # inheriting method:
 
-        # delete $symtab->{$method};
-
-        # If we delete a method, then it will be undefined and cannot
-        # be called.  But as long as we have Makefile.PLs that rely on
-        # %MY:: being intact, we have to fill the hole with an
-        # inheriting method:
-
-        eval "package MY; sub $method { shift->SUPER::$method(\@_); }";
+            {
+                package MY;
+                my $super = "SUPER::".$method;
+                *{$method} = sub {
+                    shift->$super(@_);
+                };
+            }
+        }
     }
 
     # We have to clean out %INC also, because the current directory is
@@ -899,20 +942,19 @@ sub skipcheck {
 
 sub flush {
     my $self = shift;
-    my($chunk);
-    local *FH;
 
     my $finalname = $self->{MAKEFILE};
     print STDOUT "Writing $finalname for $self->{NAME}\n";
 
     unlink($finalname, "MakeMaker.tmp", $Is_VMS ? 'Descrip.MMS' : ());
-    open(FH,">MakeMaker.tmp") or die "Unable to open MakeMaker.tmp: $!";
+    open(my $fh,">", "MakeMaker.tmp")
+        or die "Unable to open MakeMaker.tmp: $!";
 
-    for $chunk (@{$self->{RESULT}}) {
-        print FH "$chunk\n";
+    for my $chunk (@{$self->{RESULT}}) {
+        print $fh "$chunk\n";
     }
 
-    close FH;
+    close $fh;
     _rename("MakeMaker.tmp", $finalname) or
       warn "rename MakeMaker.tmp => $finalname: $!";
     chmod 0644, $finalname unless $Is_VMS;
@@ -1009,4 +1051,4 @@ sub selfdocument {
 
 __END__
 
-#line 2640
+#line 2713
