@@ -2,7 +2,7 @@ package Qudo::Manager;
 use strict;
 use warnings;
 use Qudo::Job;
-use Carp;
+use Carp ();
 use UNIVERSAL::require;
 use Qudo::HookLoader;
 use Scalar::Util qw/weaken/;
@@ -72,13 +72,18 @@ sub hooks { $_[0]->{hooks} }
 sub global_register_hooks {
     my ($self, @hook_modules) = @_;
 
-    Qudo::HookLoader->register_hooks($self, \@hook_modules);
+    for my $module (@hook_modules) {
+        $module->require or Carp::croak $@;
+        $module->load($self);
+    }
 }
 
 sub global_unregister_hooks {
     my ($self, @hook_modules) = @_;
 
-    Qudo::HookLoader->unregister_hooks($self, \@hook_modules);
+    for my $module (@hook_modules) {
+        $module->unload($self);
+    }
 }
 
 sub can_do {
@@ -105,7 +110,7 @@ sub enqueue {
     my $func_id = $self->funcname_to_id($funcname, $db);
 
     unless ($func_id) {
-        croak "$funcname can't get";
+        Carp::croak "$funcname can't get";
     }
 
     my $args = +{
