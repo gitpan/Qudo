@@ -97,6 +97,15 @@ sub funcname_to_id {
     $self->{_func_cache}->{$db}->{funcname2id}->{$funcname} ||= $self->driver_for($db)->get_func_id( $funcname );
 }
 
+sub funcnames_to_ids {
+    my ($self, $db) = @_;
+    [
+        map {
+            $self->funcname_to_id($_, $db)
+        } keys %{$self->{func_map}}
+    ];
+}
+
 sub funcid_to_name {
     my ($self, $funcid, $db) = @_;
     $self->{_func_cache}->{$db}->{funcid2name}->{$funcid} ||= $self->driver_for($db)->get_func_name( $funcid );
@@ -179,7 +188,8 @@ sub find_job {
 
     for my $db ($self->shuffled_databases) {
         return unless keys %{$self->{func_map}};
-        my $callback = $self->driver_for($db)->find_job($self->{find_job_limit_size}, $self->{func_map});
+        my $func_ids = $self->funcnames_to_ids($db);
+        my $callback = $self->driver_for($db)->find_job($self->{find_job_limit_size}, $func_ids);
 
         return $self->_grab_a_job($callback, $db);
     }
@@ -206,7 +216,7 @@ sub _grab_a_job {
         my $server_time = $self->driver_for($db)->get_server_time
             or die "expected a server time";
 
-        my $worker_class = $job_data->{func_name};
+        my $worker_class = $self->funcid_to_name($job_data->{func_id}, $db);
         my $grab_job = $self->driver_for($db)->grab_a_job(
             grabbed_until     => ($server_time + $worker_class->grab_for),
             job_id            => $job_data->{job_id},
@@ -268,4 +278,84 @@ sub enqueue_from_failed_job {
 }
 
 1;
+
+=head1 NAME
+
+Qudo::Manager - qudo manager class.
+
+=head1 DESCRIPTION
+
+Qudo::Manager is job managiment base class.
+It the job enqueue, dequeue, lookup and more.
+
+=head1 METHODS
+
+=head2 new
+
+get Qudo::Manager instance.
+It is called from L<Qudo> usually.
+
+=head2 driver_for
+
+get database driver from some databases.
+
+=head2 shuffled_databases
+
+get shuffled databases.
+
+=head2 plugin
+
+get plugin instances.
+
+=head2 register_abilities
+
+The function that this manager is processing is registered. 
+
+=head2 register_plugins
+
+Plugin is set for manager.
+
+=head2 global_register_hooks
+
+Hooks are set for manager.
+
+=head2 global_unregister_hooks
+
+Hooks are unset from manager.
+
+=head2 C<Qudo-E<gt>enqueue( $funcname, $args )>
+
+enqueue the job.
+
+=over 4
+
+=item * C<$funcname>
+
+=item * C<$args>
+
+=over 4
+
+=item * C<arg>
+
+job argments.
+
+=item * C<uniqkey>
+
+job unique key.
+
+=item * C<run_after>
+
+the value you want to check <= against on the run_after column
+require int value.
+
+=item * C<priority>
+
+job priority.
+require int value.
+
+=back
+
+=back
+
+=cut
 

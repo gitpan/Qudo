@@ -2,7 +2,7 @@ package Qudo;
 use strict;
 use warnings;
 
-our $VERSION = '0.0205';
+our $VERSION = '0.0206';
 
 use Qudo::Manager;
 use Carp;
@@ -160,7 +160,7 @@ sub job_status_list {
 
 =head1 NAME
 
-Qudo - simple job queue manager
+Qudo - simple and extensible job queue manager
 
 =head1 SYNOPSIS
 
@@ -192,7 +192,7 @@ Qudo - simple job queue manager
 
 =head1 DESCRIPTION
 
-Qudo is simple job queue manager system.
+Qudo is simple and extensible job queue manager system.
 
 Your application can insert job into DB ,that is managed by Qudo.
 And Your application can get & execute job by Qudo worker.
@@ -208,10 +208,14 @@ Qudo is consided about adding Hook Point Flexibility.
 
 Optional members of C<%args> are:
 
+=over 4
+
 =item * C<driver_class>
 
 set Qudo::Driver::(Skinny|DBI).
 default driver_class is Skinny.
+
+=back
 
 =over 4
 
@@ -265,6 +269,119 @@ An arrayref of hook class name.
 
 An arrayref of plugin class name.
 
+=back
+
+=head2 C<Qudo-E<gt>manager>
+
+get Qudo::Manager instance.
+see L<Qudo::Manager>
+
+=head2 C<Qudo-E<gt>enqueue( %args )>
+
+see L<Qudo::Manager> enqueue method.
+
+=head2 C<Qudo-E<gt>work( %args )>
+
+Find and perform any jobs $manager can do, forever.
+
+When no job is available, the working process will sleep for $delay  seconds (or 5, if not specified) before looking again.
+
+=head2 C<Qudo-E<gt>job_list( $funcname )>
+
+Returns a list of Qudo::Job objects matching the given arguments.
+The required arguments of $funcname are:
+
+=over 4
+
+=item * C<funcname>
+
+the name of the function or a reference to an array of functions.
+
+=back
+
+=head2 C<Qudo-E<gt>job_count( $funcname, $dsn )>
+
+Returns a job count infomations.
+The required arguments :
+
+=over 4
+
+=item * C<funcname>
+
+the name of the function or a reference to an array of functions.
+
+=item * C<dsn>
+
+The database DSN for job count target database.
+
+=back
+
+=head2 C<Qudo-E<gt>exception_list( $args, $dsn )>
+
+Returns a job exception infomations.
+Optional members of C<$args> are:
+
+=over 4
+
+=item * args
+
+=over 4
+
+=item * limit
+
+get exception log limit size.
+default by 10.
+
+=item * offset
+
+get exception log offset size.
+default by 0.
+
+=back
+
+=back
+
+=over 4
+
+=item * C<dsn>
+
+The database DSN for job count target database.
+
+=back
+
+=head2 C<Qudo-E<gt>job_status_list( $args, $dsn )>
+
+Returns a job exception infomations.
+Optional members of C<$args> are:
+
+=over 4
+
+=item * args
+
+=over 4
+
+=item * limit
+
+get job_status log limit size.
+default by 10.
+
+=item * offset
+
+get job_status log offset size.
+default by 0.
+
+=back
+
+=back
+
+=over 4
+
+=item * C<dsn>
+
+The database DSN for job count target database.
+
+=back
+
 =head1 REPOS
 
 http://github.com/nekokak/qudo/tree/master
@@ -286,3 +403,4 @@ LICENSE file included with this module.
 =cut
 
 1;
+

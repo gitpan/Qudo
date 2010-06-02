@@ -1,5 +1,5 @@
 ---
-abstract: 'simple job queue manager'
+abstract: 'simple and extensible job queue manager'
 author:
   - 'Atsushi Kobayashi <nekokak _at_ gmail dot com>'
 build_requires:
@@ -33,4 +33,4 @@ requires:
 resources:
   license: http://dev.perl.org/licenses/
   repository: git://github.com/nekokak/qudo.git
-version: 0.0205
+version: 0.0206
