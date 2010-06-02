@@ -27,10 +27,9 @@ requires:
   Class::Data::Inheritable: 0
   DBI: 0
   DBIx::Skinny: 0
-  Filter::Util::Call: 0
   UNIVERSAL::require: 0
   YAML: 0
 resources:
   license: http://dev.perl.org/licenses/
   repository: git://github.com/nekokak/qudo.git
-version: 0.0206
+version: 0.0207

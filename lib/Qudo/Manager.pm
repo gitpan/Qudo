@@ -24,16 +24,23 @@ sub new {
     }, $class;
     weaken($self->{qudo});
 
-    $self->global_register_hooks(@{$self->{default_hooks}});
+    $self->register_hooks(@{$self->{default_hooks}});
     $self->register_plugins(@{$self->{default_plugins}});
     $self->register_abilities(@{$self->{abilities}});
 
-    return $self;
+    $self;
 }
 
-sub driver_for { $_[0]->{qudo}->driver_for($_[1]) }
+sub driver_for         { $_[0]->{qudo}->driver_for($_[1])    }
 sub shuffled_databases { $_[0]->{qudo}->shuffled_databases() }
+
 sub plugin { $_[0]->{plugin} }
+sub hooks  { $_[0]->{hooks}  }
+
+sub can_do {
+    my ($self, $funcname) = @_;
+    $self->{func_map}->{$funcname} = 1;
+}
 
 sub register_abilities {
     my ($self, @abilities) = @_;
@@ -58,7 +65,7 @@ sub register_plugins {
 }
 
 sub call_hook {
-    my ($self, $hook_point, $worker_class, $args) = @_;
+    my ($self, $hook_point, $args) = @_;
 
     for my $module (keys %{$self->hooks->{$hook_point}}) {
         my $code = $self->hooks->{$hook_point}->{$module};
@@ -66,9 +73,7 @@ sub call_hook {
     }
 }
 
-sub hooks { $_[0]->{hooks} }
-
-sub global_register_hooks {
+sub register_hooks {
     my ($self, @hook_modules) = @_;
 
     for my $module (@hook_modules) {
@@ -77,7 +82,12 @@ sub global_register_hooks {
     }
 }
 
-sub global_unregister_hooks {
+sub global_register_hooks {
+    warn q{global_register_hooks method is deprecated. Use 'register_hooks' instead.};
+    shift->register_hooks(@_);
+}
+
+sub unregister_hooks {
     my ($self, @hook_modules) = @_;
 
     for my $module (@hook_modules) {
@@ -85,16 +95,21 @@ sub global_unregister_hooks {
     }
 }
 
-sub can_do {
-    my ($self, $funcname) = @_;
-
-    $funcname->use;
-    $self->{func_map}->{$funcname} = 1;
+sub global_unregister_hooks {
+    warn q{global_unregister_hooks method is deprecated. Use 'unregister_hooks' instead.};
+    shift->unregister_hooks(@_);
 }
 
 sub funcname_to_id {
     my ($self, $funcname, $db) = @_;
-    $self->{_func_cache}->{$db}->{funcname2id}->{$funcname} ||= $self->driver_for($db)->get_func_id( $funcname );
+
+    $self->{_func_cache}->{$db}->{funcname2id}->{$funcname} or do {
+        my $func = $self->driver_for($db)->func_from_name($funcname);
+        $self->{_func_cache}->{$db}->{funcname2id}->{$funcname} = $func->id;
+        $self->{_func_cache}->{$db}->{funcid2name}->{$func->id} = $func->name;
+
+    };
+    $self->{_func_cache}->{$db}->{funcname2id}->{$funcname};
 }
 
 sub funcnames_to_ids {
@@ -108,7 +123,13 @@ sub funcnames_to_ids {
 
 sub funcid_to_name {
     my ($self, $funcid, $db) = @_;
-    $self->{_func_cache}->{$db}->{funcid2name}->{$funcid} ||= $self->driver_for($db)->get_func_name( $funcid );
+
+    $self->{_func_cache}->{$db}->{funcid2name}->{$funcid} or do {
+        my $func = $self->driver_for($db)->func_from_id($funcid);
+        $self->{_func_cache}->{$db}->{funcname2id}->{$func->name} = $func->id;
+        $self->{_func_cache}->{$db}->{funcidename}->{$funcid} = $func->name;
+    };
+    $self->{_func_cache}->{$db}->{funcid2name}->{$funcid};
 }
 
 sub enqueue {
@@ -116,10 +137,6 @@ sub enqueue {
 
     my $db = $self->shuffled_databases;
     my $func_id = $self->funcname_to_id($funcname, $db);
-
-    unless ($func_id) {
-        Carp::croak "$funcname can't get";
-    }
 
     my $args = +{
         func_id   => $func_id,
@@ -129,13 +146,13 @@ sub enqueue {
         priority  => $arg->{priority} ||0,
     };
 
-    $self->call_hook('pre_enqueue', $funcname, $args);
-    $self->call_hook('serialize',   $funcname, $args);
+    $self->call_hook('pre_enqueue', $args);
+    $self->call_hook('serialize',   $args);
 
     my $job_id = $self->driver_for($db)->enqueue($args);
     my $job = $self->lookup_job($job_id, $db);
 
-    $self->call_hook('post_enqueue', $funcname, $job);
+    $self->call_hook('post_enqueue', $job);
 
     return $job;
 }
@@ -146,7 +163,7 @@ sub reenqueue {
     my $db = $self->shuffled_databases;
     $self->driver_for($db)->reenqueue($job->id, $args);
 
-    return $self->lookup_job($job->id);
+    return $self->lookup_job($job->id, $db);
 }
 
 sub dequeue {
@@ -163,20 +180,18 @@ sub work_once {
     my $worker_class = $job->funcname;
     return unless $worker_class;
 
-    $self->call_hook('deserialize', $worker_class, $job);
-    $self->call_hook('pre_work',    $worker_class, $job);
+    $self->call_hook('deserialize', $job);
+    $self->call_hook('pre_work',    $job);
 
-    my $res = $worker_class->work_safely($self, $job);
+    my $res = $worker_class->work_safely($job);
 
-    $self->call_hook('post_work', $worker_class, $job);
+    $self->call_hook('post_work',   $job);
 
     return $res;
 }
 
 sub lookup_job {
     my ($self, $job_id, $db) = @_;
-
-    $db ||= $self->shuffled_databases;
 
     my $callback = $self->driver_for($db)->lookup_job($job_id);
     my $job_data = $callback->();
