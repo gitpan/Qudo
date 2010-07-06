@@ -2,7 +2,7 @@ package Qudo;
 use strict;
 use warnings;
 
-our $VERSION = '0.0209';
+our $VERSION = '0.0210';
 
 use Qudo::Manager;
 use Carp ();
@@ -31,6 +31,7 @@ sub new {
         manager_abilities   => [],
         databases           => [],
         connections         => +{},
+        work_delay          => $WORK_DELAY,
         @_,
     }, $class;
 
@@ -93,7 +94,7 @@ sub enqueue {
 
 sub work {
     my ($self, $work_delay) = @_;
-    $work_delay ||= $WORK_DELAY;
+    $work_delay ||= $self->{work_delay};
 
     my $manager = $self->manager;
     unless ($manager->has_abilities) {
@@ -162,7 +163,7 @@ Qudo - simple and extensible job queue manager
     # enqueue job:
     use Qudo;
     my $qudo = Qudo->new(
-        driver_class => 'Skinny',
+        driver_class => 'Skinny', # optional.
         databases => [+{
             dsn      => 'dbi:SQLite:/tmp/qudo.db',
             username => '',
@@ -174,7 +175,7 @@ Qudo - simple and extensible job queue manager
     # do work:
     use Qudo;
     my $qudo2 = Qudo->new(
-        driver_class => 'Skinny',
+        driver_class => 'Skinny', # optional.
         databases => [+{
             dsn      => 'dbi:SQLite:/tmp/qudo.db',
             username => '',
