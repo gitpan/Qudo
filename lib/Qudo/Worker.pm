@@ -24,7 +24,7 @@ sub work_safely {
         return $res;
     }
 
-    if ( my $e = $@ || ! $job->is_completed ) {
+    if ( (my $e = $@) || ! $job->is_completed ) {
         if ( $job->retry_cnt < $class->max_retries ) {
             $job->reenqueue(
                 {
@@ -36,7 +36,7 @@ sub work_safely {
         } else {
             $job->dequeue;
         }
-        $job->failed($e || 'Job did not explicitly complete or fail');
+        $job->failed("$e" || 'Job did not explicitly complete or fail');
     } else {
         $job->dequeue;
     }
