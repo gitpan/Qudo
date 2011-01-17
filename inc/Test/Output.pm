@@ -1,5 +1,6 @@
 #line 1
 package Test::Output;
+use vars qw($VERSION);
 
 use warnings;
 use strict;
@@ -55,15 +56,15 @@ use Sub::Exporter -setup => {
 
 my $Test = Test::Builder->new;
 
-#line 65
+#line 66
 
-our $VERSION = '0.10';
+$VERSION = '0.16';
 
-#line 115
+#line 116
 
-#line 119
+#line 120
 
-#line 139
+#line 140
 
 sub stdout_is (&$;$$) {
   my $test        = shift;
@@ -97,7 +98,7 @@ sub stdout_isnt (&$;$$) {
   return $ok;
 }
 
-#line 189
+#line 190
 
 sub stdout_like (&$;$$) {
   my $test        = shift;
@@ -139,7 +140,7 @@ sub stdout_unlike (&$;$$) {
   return $ok;
 }
 
-#line 249
+#line 250
 
 sub stderr_is (&$;$$) {
   my $test        = shift;
@@ -173,7 +174,7 @@ sub stderr_isnt (&$;$$) {
   return $ok;
 }
 
-#line 300
+#line 301
 
 sub stderr_like (&$;$$) {
   my $test        = shift;
@@ -215,7 +216,7 @@ sub stderr_unlike (&$;$$) {
   return $ok;
 }
 
-#line 362
+#line 363
 
 sub combined_is (&$;$$) {
   my $test        = shift;
@@ -251,7 +252,7 @@ sub combined_isnt (&$;$$) {
   return $ok;
 }
 
-#line 416
+#line 417
 
 sub combined_like (&$;$$) {
   my $test        = shift;
@@ -295,7 +296,7 @@ sub combined_unlike (&$;$$) {
   return $ok;
 }
 
-#line 515
+#line 516
 
 sub output_is (&$$;$$) {
   my $test        = shift;
@@ -393,7 +394,7 @@ sub output_isnt (&$$;$$) {
   return $ok;
 }
 
-#line 646
+#line 647
 
 sub output_like (&$$;$$) {
   my $test        = shift;
@@ -500,11 +501,11 @@ sub output_unlike (&$$;$$) {
   return $ok;
 }
 
-#line 803
+#line 804
 
-#line 807
+#line 808
 
-#line 816
+#line 817
 
 sub stdout_from (&) {
   my $test = shift;
@@ -521,11 +522,14 @@ sub stdout_from (&) {
   return $stdout;
 }
 
-#line 840
+#line 841
 
 sub stderr_from (&) {
   my $test = shift;
 
+  local $SIG{__WARN__} = sub { print STDERR @_ }
+    if $] < 5.008;
+  
   select( ( select(STDERR), $| = 1 )[0] );
   my $err = tie *STDERR, 'Test::Output::Tie';
 
@@ -538,7 +542,7 @@ sub stderr_from (&) {
   return $stderr;
 }
 
-#line 864
+#line 868
 
 sub output_from (&) {
   my $test = shift;
@@ -560,7 +564,7 @@ sub output_from (&) {
   return ( $stdout, $stderr );
 }
 
-#line 894
+#line 898
 
 sub combined_from (&) {
   my $test = shift;
@@ -577,9 +581,12 @@ sub combined_from (&) {
   my $combined = $out->read;
 
   undef $out;
+  {
+  no warnings;
   untie *STDOUT;
   untie *STDERR;
-
+  }
+  
   return ($combined);
 }
 
@@ -602,6 +609,6 @@ sub _chkregex {
   return 1;
 }
 
-#line 965
+#line 980
 
 1;    # End of Test::Output
